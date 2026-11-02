@@ -188,14 +188,28 @@ $('loadAllSheet').onclick=async()=>{
   if(!res||!res.ok)throw new Error((res&&res.error)||'Could not load the Employee Pool.');
   const all=(res.employees||[]).filter(e=>String(e.status||'ACTIVE').toUpperCase()!=='INACTIVE'&&e.recordId&&e.employeeCode);
   if(!all.length)throw new Error('No active employee records with permanent Record IDs were found.');
-  allocated=all.map(mapEmployee);
+  // Keep only one form per Employee ID; loading the pool never creates employees.
+  const unique=[];
+  const seenCodes=new Set();
+  all.forEach(e=>{
+    const code=String(e.employeeCode||'').trim().toUpperCase();
+    if(code && !seenCodes.has(code)){seenCodes.add(code);unique.push(e);}
+  });
+  allocated=unique.map(mapEmployee);
   records=allocated;
+  $('status').textContent='Allocating specimen forms for existing employees only…';
+  const allocation=await postToAppsScript({
+    action:'bulkAllocate',
+    employees:unique.map(e=>({employeeCode:e.employeeCode,recordId:e.recordId})),
+    notes:'Bulk allocation from existing Employee Pool; employee data unchanged'
+  });
+  if(allocation && allocation.ok===false)throw new Error(allocation.error||'Bulk allocation was not confirmed.');
   render(allocated);
   $('bulkPanel').classList.remove('hide');
-  $('bulkCount').textContent=`${allocated.length} existing active employee records loaded from Google Sheets. No employees or Record IDs were created.`;
-  $('status').textContent=`Loaded ${allocated.length} existing employee forms. Click “Print All Forms / Save as PDF” for one A4 page per employee.`;
+  $('bulkCount').textContent=`${allocated.length} existing employees loaded. Allocation logged only; no employee records or IDs were created.`;
+  $('status').textContent=`Loaded ${allocated.length} unique existing employees and logged form allocation. Click “Print All Forms / Save as PDF” for one A4 page per employee.`;
  }catch(err){$('status').textContent='Bulk sheet load failed: '+err.message}
 };
-$('printAll').onclick=()=>{if(!allocated.length){alert('Upload a CSV first.');return}render(allocated);window.print()};$('downloadCurrentRegister').onclick=()=>{if(!allocated.length)return;csvDownload('GGL_Bulk_Specimen_Signature_Register.csv',[['Record ID','Employee Name','Employee ID','Department','Designation','Branch','Date','Format / Annexure No.'],...allocated.map(r=>[r.recordId,r.name,r.id,r.department,r.designation,r.branch,r.date,r.formNo])])};$('exportRegister').onclick=()=>{const saved=JSON.parse(localStorage.getItem('gglSpecimenRegister')||'[]');csvDownload('GGL_Allocated_Register.csv',[['Record ID','Employee Name','Employee ID'],...saved.map(r=>[r.recordId,r.name,r.id])])};$('resetFormNo').onclick=()=>{$('formNo').value='GL-HR-FRM-001-01';$('status').textContent='Format / Annexure No. reset to GL-HR-FRM-001-01.'};
+$('printAll').onclick=()=>{if(!allocated.length){alert('Load employees from Google Sheets or upload a CSV first.');return}render(allocated);window.print()};$('downloadCurrentRegister').onclick=()=>{if(!allocated.length)return;csvDownload('GGL_Bulk_Specimen_Signature_Register.csv',[['Record ID','Employee Name','Employee ID','Department','Designation','Branch','Date','Format / Annexure No.'],...allocated.map(r=>[r.recordId,r.name,r.id,r.department,r.designation,r.branch,r.date,r.formNo])])};$('exportRegister').onclick=()=>{const saved=JSON.parse(localStorage.getItem('gglSpecimenRegister')||'[]');csvDownload('GGL_Allocated_Register.csv',[['Record ID','Employee Name','Employee ID'],...saved.map(r=>[r.recordId,r.name,r.id])])};$('resetFormNo').onclick=()=>{$('formNo').value='GL-HR-FRM-001-01';$('status').textContent='Format / Annexure No. reset to GL-HR-FRM-001-01.'};
 $('clear').onclick=()=>{['empName','empId','department','designation','branch'].forEach(k=>$(k).value='');$('date').value=today();$('formNo').value='GL-HR-FRM-001-01';$('status').textContent='Fields cleared and Form No. reset.'};
 </script></body></html>
