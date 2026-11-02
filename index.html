@@ -29,7 +29,9 @@ function jsonp(params){
   document.head.appendChild(script);
  });
 }
-function postToAppsScript(payload){
+async function postToAppsScript(payload){
+ // Cross-origin iframe POST cannot expose the Apps Script JSON response.
+ // Submit the request, then confirm through the readable JSONP employee endpoint.
  return new Promise((resolve,reject)=>{
   const frame=document.createElement('iframe');
   frame.name='ggl_post_'+Date.now();
@@ -41,9 +43,21 @@ function postToAppsScript(payload){
   input.name='payload';input.value=JSON.stringify(payload);input.type='hidden';
   form.appendChild(input);document.body.appendChild(frame);document.body.appendChild(form);
   let settled=false;
-  frame.onload=()=>{if(!settled){settled=true;setTimeout(()=>{form.remove();frame.remove();resolve(true)},900)}};
+  const cleanup=()=>{form.remove();frame.remove()};
+  frame.onload=async()=>{
+   if(settled)return;
+   settled=true;
+   cleanup();
+   try{
+    const code=String(payload.employeeCode||(payload.employee&&payload.employee.employeeCode)||'').trim();
+    if(!code){resolve({ok:true});return;}
+    const confirm=await jsonp({action:'employee',employeeCode:code});
+    if(confirm&&confirm.ok&&confirm.employee)resolve({ok:true,employee:confirm.employee});
+    else resolve({ok:false,error:(confirm&&confirm.error)||'The backend request was sent, but the employee record could not be confirmed.'});
+   }catch(err){reject(new Error('Request submitted, but confirmation failed: '+err.message));}
+  };
   form.submit();
-  setTimeout(()=>{if(!settled){settled=true;form.remove();frame.remove();reject(new Error('Apps Script did not respond within 60 seconds. Check the Apps Script execution log and web-app deployment.'))}},60000);
+  setTimeout(()=>{if(!settled){settled=true;cleanup();reject(new Error('Apps Script did not respond. Check web-app deployment and execution logs.'))}},60000);
  });
 }
 function mapEmployee(e){
