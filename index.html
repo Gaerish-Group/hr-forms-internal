@@ -11,8 +11,8 @@
 <div><label for="poolSelect">Select Existing Employee</label><select id="poolSelect"><option value="">Load/search employees first</option></select><button class="secondary" id="loadEmployee">Use Selected Employee</button><button class="secondary" id="reprintExisting">Generate / Reprint Existing Form</button></div>
 </div>
 <div class="fields"><div><label for="formNo">Format / Annexure No. (manual entry)</label><input id="formNo" value="GL-HR-FRM-001-01"><button type="button" class="secondary" id="resetFormNo" style="margin-top:6px">Reset Form No.</button></div><div><label for="empName">Employee Name</label><input id="empName" placeholder="Employee name"></div><div><label for="empId">Employee ID</label><input id="empId" placeholder="Employee ID"></div><div><label for="department">Department</label><input id="department" placeholder="Department"></div><div><label for="designation">Designation</label><input id="designation" placeholder="Designation"></div><div><label for="branch">Branch (employee to fill)</label><input id="branch" placeholder="Enter branch; can be left blank"></div><div><label for="date">Date</label><input id="date" type="date"></div></div>
-<div style="margin-top:14px"><button class="primary" id="generateOne">Generate Individual Form</button><button class="secondary" id="downloadTemplate">Download Bulk CSV Template</button><button class="secondary" id="uploadBtn">Upload Employee CSV</button><input id="upload" type="file" accept=".csv,text/csv" hidden><button class="secondary" id="exportRegister">Download Allocated Register</button><button class="danger" id="clear">Clear Fields</button></div><div class="status" id="status">Use individual entry or upload a CSV to create multiple forms.</div></section>
-<section class="panel hide" id="bulkPanel"><h2 style="margin-top:0">Bulk records</h2><div id="bulkCount"></div><button class="primary" id="printAll">Print All Forms / Save as PDF</button><button class="secondary" id="downloadCurrentRegister">Download Bulk Register CSV</button></section></main><div id="printPages" class="print-pages"></div>
+<div style="margin-top:14px"><button class="primary" id="generateOne">Generate Individual Form</button><button class="secondary" id="downloadTemplate">Download Bulk CSV Template</button><button class="secondary" id="uploadBtn">Upload Employee CSV</button><input id="upload" type="file" accept=".csv,text/csv" hidden><button class="secondary" id="exportRegister">Download Allocated Register</button><button class="danger" id="clear">Clear Fields</button></div><div class="status" id="status">Use individual entry, load existing employees from Google Sheets for bulk printing, or upload a CSV.</div></section>
+<section class="panel hide" id="bulkPanel"><h2 style="margin-top:0">Bulk records</h2><div id="bulkCount"></div><button class="primary" id="printAll">Print All Forms / Save as PDF</button><button class="secondary" id="loadAllSheet">Load All Existing Employees from Sheet</button><button class="secondary" id="downloadCurrentRegister">Download Bulk Register CSV</button></section></main><div id="printPages" class="print-pages"></div>
 <script>
 
 const API_URL='https://script.google.com/macros/s/AKfycbxt85X-0axTGQI1RnNG1yYYfh6HeIOcta-fZJwsPvomPl_mLrBRiqWoZnaNjuAw3p17CQ/exec';
@@ -166,6 +166,21 @@ $('upload').onchange=async e=>{
    :`No new forms prepared. Existing employees: ${skippedExisting}; duplicate rows: ${duplicateInFile}.`;
  }catch(err){$('status').textContent='Bulk preparation failed: '+err.message}
  finally{e.target.value=''}
+};
+$('loadAllSheet').onclick=async()=>{
+ try{
+  $('status').textContent='Loading active employees from Google Sheets…';
+  const res=await jsonp({action:'pool',q:''});
+  if(!res||!res.ok)throw new Error((res&&res.error)||'Could not load the Employee Pool.');
+  const all=(res.employees||[]).filter(e=>String(e.status||'ACTIVE').toUpperCase()!=='INACTIVE'&&e.recordId&&e.employeeCode);
+  if(!all.length)throw new Error('No active employee records with permanent Record IDs were found.');
+  allocated=all.map(mapEmployee);
+  records=allocated;
+  render(allocated);
+  $('bulkPanel').classList.remove('hide');
+  $('bulkCount').textContent=`${allocated.length} existing active employee records loaded from Google Sheets. No employees or Record IDs were created.`;
+  $('status').textContent=`Loaded ${allocated.length} existing employee forms. Click “Print All Forms / Save as PDF” for one A4 page per employee.`;
+ }catch(err){$('status').textContent='Bulk sheet load failed: '+err.message}
 };
 $('printAll').onclick=()=>{if(!allocated.length){alert('Upload a CSV first.');return}render(allocated);window.print()};$('downloadCurrentRegister').onclick=()=>{if(!allocated.length)return;csvDownload('GGL_Bulk_Specimen_Signature_Register.csv',[['Record ID','Employee Name','Employee ID','Department','Designation','Branch','Date','Format / Annexure No.'],...allocated.map(r=>[r.recordId,r.name,r.id,r.department,r.designation,r.branch,r.date,r.formNo])])};$('exportRegister').onclick=()=>{const saved=JSON.parse(localStorage.getItem('gglSpecimenRegister')||'[]');csvDownload('GGL_Allocated_Register.csv',[['Record ID','Employee Name','Employee ID'],...saved.map(r=>[r.recordId,r.name,r.id])])};$('resetFormNo').onclick=()=>{$('formNo').value='GL-HR-FRM-001-01';$('status').textContent='Format / Annexure No. reset to GL-HR-FRM-001-01.'};
 $('clear').onclick=()=>{['empName','empId','department','designation','branch'].forEach(k=>$(k).value='');$('date').value=today();$('formNo').value='GL-HR-FRM-001-01';$('status').textContent='Fields cleared and Form No. reset.'};
